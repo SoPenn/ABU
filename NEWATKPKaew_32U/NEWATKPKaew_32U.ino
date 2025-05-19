@@ -32,32 +32,31 @@ void processGamepad(ControllerPtr ctl) {
     led = 0;
   }
   switch (led) {
-    case 1: ctl->setColorLED(0, 255, 0); break;     // เขียว
-    case 2: ctl->setColorLED(255, 255, 0); break;   // เหลือง
-    case 3: ctl->setColorLED(255, 165, 0); break;   // ส้ม
-    case 4: ctl->setColorLED(255, 0, 0); break;     // แดง
-    default: ctl->setColorLED(0, 0, 255); break;    // น้ำเงิน (หรือดับ)
+    case 1: ctl->setColorLED(0, 255, 0); break;    // เขียว
+    case 2: ctl->setColorLED(200, 255, 0); break;  // เหลือง
+    case 3: ctl->setColorLED(255, 165, 0); break;  // ส้ม
+    case 4: ctl->setColorLED(255, 0, 0); break;    // แดง
+    default: ctl->setColorLED(255, 255, 255); break;   // น้ำเงิน (หรือดับ)
   }
-
   brakePressedLast = brakeNow;
 }
-
-
 
 void onConnectedController(ControllerPtr ctl) {
   auto props = ctl->getProperties();
   ctl->setRumble(0x40, 0x40);
-
   delay(500);
 
   Serial.println("New controller connected");
 
+  // ตรวจสอบว่าเป็น PS5
   if (props.vendor_id == VID_PS5 && props.product_id == PID_PS5) {
     if (!activeCtl || !activeCtl->isConnected()) {
       activeCtl = ctl;
       Serial.println("PS5 controller accepted and set as activeCtl");
 
-      // Visual feedback
+      // ปิดรับ controller ใหม่ ด้วยการลบ callback
+      BP32.setup(nullptr, nullptr);  // ยกเลิก callback
+
       ctl->setPlayerLEDs(0x04);
       ctl->setPlayerLEDs(0x00);
     } else {
@@ -75,6 +74,9 @@ void onDisconnectedController(ControllerPtr ctl) {
   if (ctl == activeCtl) {
     activeCtl = nullptr;
     Serial.println("activeCtl cleared");
+
+    // ✅ เรียก setup ใหม่ ถ้าต้องการให้ค้นหาจอยอีกครั้ง
+    BP32.setup(&onConnectedController, &onDisconnectedController);
   }
 }
 
@@ -92,6 +94,14 @@ void sendGamepadData(ControllerPtr ctl) {
   uint16_t dpad = ctl->dpad();
   uint32_t buttons = ctl->buttons();
 
+  // ตรวจสอบว่าทุกค่าเป็นศูนย์หรือไม่
+  if (lx == 0 && ly == 0 && rx == 0 && ry == 0 &&
+      throttle == 0 && brake == 0 &&
+      dpad == 0 && buttons == 0) {
+    return;  // ไม่ส่ง UART หากไม่มีการเคลื่อนไหว/กดปุ่ม
+  }
+
+  // ถ้ามีค่าใดค่าใดไม่เป็น 0 ให้ส่งผ่าน UART
   Serial.printf("LX:%d\tLY:%d\tRX:%d\tRY:%d\tThrottle:%d\tBrake:%d\tDpad:0x%04X\tButtons:0x%04lX\n",
                 lx, ly, rx, ry, throttle, brake, dpad, buttons);
 
@@ -128,10 +138,8 @@ void setup() {
   esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL0, ESP_PWR_LVL_P9);
 
   //BP32.enableVirtualDevice(false);
+  // BP32.forgetBluetoothKeys();  // ล้างจอยที่จับคู่อยู่ก่อนหน้า
   BP32.setup(&onConnectedController, &onDisconnectedController);
-  BP32.forgetBluetoothKeys();  // ล้างจอยที่จับคู่อยู่ก่อนหน้า
-
-
 
   Serial.println("Bluetooth controller ready.");
 }
