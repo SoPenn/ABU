@@ -1,10 +1,10 @@
-#define DEBUG_MODE 1  // ตั้งเป็น 0 เพื่อปิด debug หรือ // ทิ้ง
+#define DEBUG_MODE 0  // เปลี่ยนเป็น 1 เพื่อเปิด debug
 #define BP32_LOG_LEVEL 0
 #include <Bluepad32.h>
 #include "esp_bt.h"
 
 // Debug macros
-#ifdef DEBUG_MODE
+#if DEBUG_MODE
 #define DEBUG_PRINT(x) Serial.print(x)
 #define DEBUG_PRINTLN(x) Serial.println(x)
 #define DEBUG_PRINTF(...) Serial.printf(__VA_ARGS__)
@@ -136,7 +136,7 @@ void setup() {
 void loop() {
   BP32.update();
 
-   // ตรวจสอบกรณี controller หลุด แต่ callback ไม่ทำงาน
+  // ตรวจสอบกรณี controller หลุด แต่ callback ไม่ทำงาน
   if (activeCtl && !activeCtl->isConnected()) {
     DEBUG_PRINTLN("Controller lost without disconnect event. Forcing clear.");
     activeCtl = nullptr;
