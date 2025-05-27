@@ -84,15 +84,16 @@ void MOVE_MENT() {
   driveMotor(motorPWMPins[3], motorDIRPins[3], m4, 3);
 }
 
-void DEFENDER() {
+void DEFENDER(uint16_t brake) {
   digitalWrite(DEF_CW, 1);
   digitalWrite(DEF_CCW, 1);
 
-  if (buttons & 0x10) {  // L1 กด → หมุนตามเข็มนาฬิกา
-    digitalWrite(DEF_CW, 0);
-  }
-  if (buttons & 0x40) {  // L2 กด → หมุนทวนเข็มนาฬิกา
+  if (buttons & 0x10) {  // L1 กด → หมุนทวนเข็มนาฬิกา
     digitalWrite(DEF_CCW, 0);
+  }
+
+  if (brake == 1020) {  // L2 กด → หมุนตามเข็มนาฬิกา
+    digitalWrite(DEF_CW, 0);
   }
 }
 
@@ -143,7 +144,7 @@ void processUART() {
     DEBUG_PRINTLN(buttons, HEX);
 
     MOVE_MENT();
-    DEFENDER();
+    DEFENDER(brake);
   }
 }
 
