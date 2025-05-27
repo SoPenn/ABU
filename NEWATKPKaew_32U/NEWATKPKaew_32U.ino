@@ -1,6 +1,25 @@
 #define BP32_LOG_LEVEL 0
+#include <Arduino.h>
 #include <Bluepad32.h>
 #include "esp_bt.h"
+
+#define ENABLE_DEBUG 0 // ถ้าอยากเปิด debug: uncomment บรรทัดนี้ หรือใช้ 0
+
+#ifdef ENABLE_DEBUG
+#define DEBUG_PRINT(...) Serial.print(__VA_ARGS__)
+#define DEBUG_PRINTLN(...) Serial.println(__VA_ARGS__)
+#define DEBUG_PRINTF(...) Serial.printf(__VA_ARGS__)
+#else
+#define DEBUG_PRINT(...) \
+  do { \
+  } while (0)
+#define DEBUG_PRINTLN(...) \
+  do { \
+  } while (0)
+#define DEBUG_PRINTF(...) \
+  do { \
+  } while (0)
+#endif
 
 ControllerPtr activeCtl = nullptr;
 ControllerPtr myControllers[BP32_MAX_GAMEPADS];
@@ -15,66 +34,66 @@ HardwareSerial UART_OUT(1);  // TX=17, RX=16
 void processGamepad(ControllerPtr ctl) {
   static bool brakePressedLast = false;
   static int led = 0;
+
   ctl->setPlayerLEDs(led & 0x0f);
   bool brakeNow = (ctl->brake() == 1020);
   uint32_t buttons = ctl->buttons();
 
   if (brakeNow && !brakePressedLast) {
-
-    led++;
-    if (led > 4) {
-      led = 0;
-    }
+    led = (led + 1) % 5;
   }
+  brakePressedLast = brakeNow;
 
-  // ตรวจจับปุ่ม O ตลอดเวลา
+  // ปุ่ม O รีเซตสี
   if (buttons & 0x0002) {
     led = 0;
   }
+
   switch (led) {
-    case 1: ctl->setColorLED(0, 255, 0); break;     // เขียว
-    case 2: ctl->setColorLED(255, 255, 0); break;   // เหลือง
-    case 3: ctl->setColorLED(255, 165, 0); break;   // ส้ม
-    case 4: ctl->setColorLED(255, 0, 0); break;     // แดง
-    default: ctl->setColorLED(0, 0, 255); break;    // น้ำเงิน (หรือดับ)
+    case 1: ctl->setColorLED(0, 255, 0); break;       // เขียว
+    case 2: ctl->setColorLED(200, 255, 0); break;     // เหลือง
+    case 3: ctl->setColorLED(255, 165, 0); break;     // ส้ม
+    case 4: ctl->setColorLED(255, 0, 0); break;       // แดง
+    default: ctl->setColorLED(255, 255, 255); break;  // ขาว
   }
-
-  brakePressedLast = brakeNow;
 }
-
-
 
 void onConnectedController(ControllerPtr ctl) {
   auto props = ctl->getProperties();
-  ctl->setRumble(0x40, 0x40);
-
+  ctl->setRumble(0x50, 0x50);
   delay(500);
 
-  Serial.println("New controller connected");
+  DEBUG_PRINTLN("New controller connected");
 
+  // ตรวจสอบว่าเป็น PS5
   if (props.vendor_id == VID_PS5 && props.product_id == PID_PS5) {
     if (!activeCtl || !activeCtl->isConnected()) {
       activeCtl = ctl;
-      Serial.println("PS5 controller accepted and set as activeCtl");
+      DEBUG_PRINTLN("PS5 controller accepted and set as activeCtl");
+      // หยุด callback ตัวอื่น
+      BP32.setup(nullptr, nullptr);
 
-      // Visual feedback
+      BP32.disconnectNotUsedGamepads();
+
       ctl->setPlayerLEDs(0x04);
       ctl->setPlayerLEDs(0x00);
     } else {
-      Serial.println("Another controller is already active. Disconnecting this one.");
+      DEBUG_PRINTLN("Another controller is already active. Disconnecting this one.");
       ctl->disconnect();
     }
   } else {
-    Serial.println("Non-PS5 controller. Disconnecting.");
+    DEBUG_PRINTLN("Non-PS5 controller. Disconnecting.");
     ctl->disconnect();
   }
 }
 
 void onDisconnectedController(ControllerPtr ctl) {
-  Serial.println("Controller disconnected");
+  DEBUG_PRINTLN("Controller disconnected");
   if (ctl == activeCtl) {
     activeCtl = nullptr;
-    Serial.println("activeCtl cleared");
+    DEBUG_PRINTLN("activeCtl cleared");
+    // เริ่มค้นหาใหม่
+    BP32.setup(&onConnectedController, &onDisconnectedController);
   }
 }
 
@@ -92,27 +111,25 @@ void sendGamepadData(ControllerPtr ctl) {
   uint16_t dpad = ctl->dpad();
   uint32_t buttons = ctl->buttons();
 
-  Serial.printf("LX:%d\tLY:%d\tRX:%d\tRY:%d\tThrottle:%d\tBrake:%d\tDpad:0x%04X\tButtons:0x%04lX\n",
-                lx, ly, rx, ry, throttle, brake, dpad, buttons);
+  // หากไม่มีการเคลื่อนไหว/กดปุ่ม ไม่ต้องส่ง
+  if (lx == 0 && ly == 0 && rx == 0 && ry == 0 && throttle == 0 && brake == 0 && dpad == 0 && buttons == 0) {
+    return;
+  }
 
-  uint8_t data[17];
-  data[0] = 0xAA;
-  data[1] = highByte(lx);
-  data[2] = lowByte(lx);
-  data[3] = highByte(ly);
-  data[4] = lowByte(ly);
-  data[5] = highByte(rx);
-  data[6] = lowByte(rx);
-  data[7] = highByte(throttle);
-  data[8] = lowByte(throttle);
-  data[9] = highByte(brake);
-  data[10] = lowByte(brake);
-  data[11] = highByte(dpad);
-  data[12] = lowByte(dpad);
-  data[13] = (buttons >> 24) & 0xFF;
-  data[14] = (buttons >> 16) & 0xFF;
-  data[15] = (buttons >> 8) & 0xFF;
-  data[16] = (buttons >> 0) & 0xFF;
+  DEBUG_PRINTF("LX:%d\tLY:%d\tRX:%d\tRY:%d\tThrottle:%d\tBrake:%d\tDpad:0x%04X\tButtons:0x%04lX\n",
+               lx, ly, rx, ry, throttle, brake, dpad, buttons);
+
+  uint8_t data[17] = {
+    0xAA,
+    highByte(lx), lowByte(lx),
+    highByte(ly), lowByte(ly),
+    highByte(rx), lowByte(rx),
+    highByte(throttle), lowByte(throttle),
+    highByte(brake), lowByte(brake),
+    highByte(dpad), lowByte(dpad),
+    uint8_t(buttons >> 24), uint8_t(buttons >> 16),
+    uint8_t(buttons >> 8), uint8_t(buttons)
+  };
 
   UART_OUT.write(data, sizeof(data));
 }
@@ -127,21 +144,16 @@ void setup() {
   esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_SCAN, ESP_PWR_LVL_P9);
   esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL0, ESP_PWR_LVL_P9);
 
-  //BP32.enableVirtualDevice(false);
   BP32.setup(&onConnectedController, &onDisconnectedController);
-  BP32.forgetBluetoothKeys();  // ล้างจอยที่จับคู่อยู่ก่อนหน้า
-
-
-
-  Serial.println("Bluetooth controller ready.");
+  DEBUG_PRINTLN("Bluetooth controller ready.");
 }
 
 void loop() {
   BP32.update();
 
-  // ตรวจสอบกรณี controller หลุด แต่ callback ไม่ทำงาน
+  // กรณีหลุดโดยไม่มี event
   if (activeCtl && !activeCtl->isConnected()) {
-    Serial.println("Controller lost without disconnect event. Forcing clear.");
+    DEBUG_PRINTLN("Controller lost without disconnect event. Forcing clear.");
     activeCtl = nullptr;
   }
 
