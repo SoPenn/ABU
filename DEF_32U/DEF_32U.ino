@@ -1,55 +1,72 @@
-#define DEBUG_MODE 0  // ตั้งเป็น 0 เพื่อปิด debug หรือ // ทิ้ง
+#define DEBUG_MODE 1  // ตั้งเป็น 0 เพื่อปิด debug หรือ // ทิ้ง
 #define BP32_LOG_LEVEL 0
 #include <Bluepad32.h>
 #include "esp_bt.h"
 
 // Debug macros
-#if DEBUG_MODE
-  #define DEBUG_PRINT(x)    Serial.print(x)
-  #define DEBUG_PRINTLN(x)  Serial.println(x)
-  #define DEBUG_PRINTF(...) Serial.printf(__VA_ARGS__)
+#ifdef DEBUG_MODE
+#define DEBUG_PRINT(x) Serial.print(x)
+#define DEBUG_PRINTLN(x) Serial.println(x)
+#define DEBUG_PRINTF(...) Serial.printf(__VA_ARGS__)
 #else
-  #define DEBUG_PRINT(x)
-  #define DEBUG_PRINTLN(x)
-  #define DEBUG_PRINTF(...)
+#define DEBUG_PRINT(x)
+#define DEBUG_PRINTLN(x)
+#define DEBUG_PRINTF(...)
 #endif
 
 ControllerPtr activeCtl = nullptr;
 ControllerPtr myControllers[BP32_MAX_GAMEPADS];
 
-// PS5 VID & PID
-constexpr uint16_t VID_PS5 = 0x054c;
-constexpr uint16_t PID_PS5 = 0x0ce6;
+const uint8_t allowedMAC[6] = { 0x10, 0x18, 0x49, 0xF1, 0xEB, 0x1D };  // adress
 
 // UART
 HardwareSerial UART_OUT(1);  // TX=17, RX=16
 
+// ตรวจสอบ MAC
+bool isAllowedMAC(const uint8_t* addr, ControllerPtr ctl) {
+  for (int i = 0; i < 6; ++i) {
+    if (addr[i] != allowedMAC[i]) return false;
+  }
+  return true;
+}
+
 void onConnectedController(ControllerPtr ctl) {
   auto props = ctl->getProperties();
-  DEBUG_PRINTLN("New controller connected");
-  if (props.vendor_id == VID_PS5 && props.product_id == PID_PS5) {
-    if (!activeCtl || !activeCtl->isConnected()) {
-      activeCtl = ctl;
-      DEBUG_PRINTLN("PS5 controller accepted and set as activeCtl");
 
-      // Visual feedback
-      ctl->setPlayerLEDs(0x04);
-      ctl->setPlayerLEDs(0x00);
-      ctl->setRumble(0x50, 0x50);
-    } else {
-      DEBUG_PRINTLN("Another controller is already active. Disconnecting this one.");
-      ctl->disconnect();
-    }
-  } else {
-    DEBUG_PRINTLN("Non-PS5 controller. Disconnecting.");
+  DEBUG_PRINTLN("🎮 New controller connected");
+
+  // 🔒 ตรวจสอบ MAC address
+  if (!isAllowedMAC(props.btaddr, ctl)) {
+    DEBUG_PRINTLN("⛔ Unallowed MAC detected. Disconnecting controller.");
+    ctl->setRumble(0xFF, 0xFF);
+    delay(300);
     ctl->disconnect();
-  } 
+    return;
+  }
+
+  // ❗ มีจอยตัวอื่นเชื่อมแล้ว → ไม่ให้จอยอื่นแย่ง
+  if (activeCtl && activeCtl->isConnected()) {
+    DEBUG_PRINTLN("⚠️ Another controller is already active. Disconnecting this one.");
+    ctl->disconnect();
+    ctl->setRumble(0xFF, 0xFF);
+    delay(300);
+    return;
+  }
+
+  // ✅ ยอมรับจอยของคุณ
+  activeCtl = ctl;
+  DEBUG_PRINTLN("✅ Allowed PS5 controller connected.");
+  ctl->setPlayerLEDs(0x04);
+  ctl->setRumble(0x40, 0x40);
+  BP32.setup(nullptr, nullptr);
+  delay(300);
 }
 
 void onDisconnectedController(ControllerPtr ctl) {
   DEBUG_PRINTLN("Controller disconnected");
   if (ctl == activeCtl) {
     activeCtl = nullptr;
+    BP32.setup(&onConnectedController, &onDisconnectedController);
     DEBUG_PRINTLN("activeCtl cleared");
   }
 }
@@ -74,7 +91,7 @@ void sendGamepadData(ControllerPtr ctl) {
   }
 
   DEBUG_PRINTF("LX:%d\tLY:%d\tRX:%d\tRY:%d\tThrottle:%d\tBrake:%d\tDpad:0x%04X\tButtons:0x%04lX\n",
-                lx, ly, rx, ry, throttle, brake, dpad, buttons);
+               lx, ly, rx, ry, throttle, brake, dpad, buttons);
 
   uint8_t data[17];
   data[0] = 0xAA;
@@ -109,7 +126,7 @@ void setup() {
 
   BP32.enableVirtualDevice(false);
   BP32.setup(&onConnectedController, &onDisconnectedController);
-  // BP32.forgetBluetoothKeys();  // ล้างจอยที่จับคู่อยู่ก่อนหน้า
+  BP32.forgetBluetoothKeys();  // ล้างจอยที่จับคู่อยู่ก่อนหน้า
 
   UART_OUT.begin(115200, SERIAL_8E1, -1, 17);  // TX=17
 
@@ -119,7 +136,7 @@ void setup() {
 void loop() {
   BP32.update();
 
-  // ตรวจสอบกรณี controller หลุด แต่ callback ไม่ทำงาน
+   // ตรวจสอบกรณี controller หลุด แต่ callback ไม่ทำงาน
   if (activeCtl && !activeCtl->isConnected()) {
     DEBUG_PRINTLN("Controller lost without disconnect event. Forcing clear.");
     activeCtl = nullptr;
@@ -127,6 +144,7 @@ void loop() {
 
   if (activeCtl && activeCtl->isConnected()) {
     sendGamepadData(activeCtl);
-    delay(20);
   }
+
+  delay(20);
 }
