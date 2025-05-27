@@ -111,11 +111,6 @@ void sendGamepadData(ControllerPtr ctl) {
   uint16_t dpad = ctl->dpad();
   uint32_t buttons = ctl->buttons();
 
-  // หากไม่มีการเคลื่อนไหว/กดปุ่ม ไม่ต้องส่ง
-  if (lx == 0 && ly == 0 && rx == 0 && ry == 0 && throttle == 0 && brake == 0 && dpad == 0 && buttons == 0) {
-    return;
-  }
-
   DEBUG_PRINTF("LX:%d\tLY:%d\tRX:%d\tRY:%d\tThrottle:%d\tBrake:%d\tDpad:0x%04X\tButtons:0x%04lX\n",
                lx, ly, rx, ry, throttle, brake, dpad, buttons);
 
