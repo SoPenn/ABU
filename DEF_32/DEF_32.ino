@@ -1,7 +1,7 @@
 const int MAX_DUTY = 255;
 
 // เปิดหรือปิดการดีบัคที่นี่
-#define DEBUG_ENABLE 1
+#define DEBUG_ENABLE 0
 #define DEBUG_PRINT(...) \
   do { \
     if (DEBUG_ENABLE) Serial.print(__VA_ARGS__); \
