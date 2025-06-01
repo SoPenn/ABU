@@ -1,7 +1,8 @@
-const int MAX_DUTY = 255;
+#include <Wire.h>
+#include <Adafruit_PWMServoDriver.h>
 
 // เปิดหรือปิดการดีบัคที่นี่
-#define DEBUG_ENABLE 0
+#define DEBUG_ENABLE 1
 #define DEBUG_PRINT(...) \
   do { \
     if (DEBUG_ENABLE) Serial.print(__VA_ARGS__); \
@@ -12,6 +13,10 @@ const int MAX_DUTY = 255;
   } while (0)
 
 HardwareSerial UART_IN(1);  // UART1 RX=16, TX=17
+
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
+
+const int MAX_DUTY = 255;
 
 // Motor pins
 const int motorPWMPins[] = { 4, 14, 18, 17 };
@@ -85,15 +90,14 @@ void MOVE_MENT() {
 }
 
 void DEFENDER(uint16_t brake) {
-  digitalWrite(DEF_CW, 1);
-  digitalWrite(DEF_CCW, 1);
-
   if (buttons & 0x10) {  // L1 กด → หมุนทวนเข็มนาฬิกา
-    digitalWrite(DEF_CCW, 0);
+    pwm.setPWM(0, 0, 0);
+    pwm.setPWM(1, 0, 4095);
   }
 
   if (brake == 1020) {  // L2 กด → หมุนตามเข็มนาฬิกา
-    digitalWrite(DEF_CW, 0);
+    pwm.setPWM(0, 0, 4095);
+    pwm.setPWM(1, 0, 0);
   }
 }
 
@@ -153,6 +157,9 @@ void setup() {
 
   UART_IN.begin(115200, SERIAL_8E1, 16, -1);
 
+  pwm.begin();
+  pwm.setPWMFreq(1000);
+
   for (int i = 0; i < 4; i++) {
     pinMode(motorDIRPins[i], OUTPUT);
     ledcSetup(i, 5000, 8);
@@ -171,5 +178,6 @@ void loop() {
 
   if (millis() - lastUARTTime > UART_TIMEOUT) {
     brakeAllMotors();
+    DEBUG_PRINTLN("UART time out a");
   }
 }
